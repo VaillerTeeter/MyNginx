@@ -1,14 +1,16 @@
 # 🚀 Nginx 高级配置仓库
 
-一个注释详尽、开箱即用的 Nginx 配置仓库，遵循安全最佳实践，内含精美自定义错误页面。
+一个注释详尽、开箱即用的 Nginx 配置仓库，遵循安全最佳实践，内含精美自定义错误页面与默认拦截服务器配置。
 
 ## ✨ 特性亮点
 
 - **📚 详尽注释**：`nginx.conf` 配置文件包含全中文详细注释，新手友好
 - **🔐 SSL/TLS 加固**：预配置现代加密套件，支持 TLS 1.2/1.3
 - **🛡️ 安全响应头**：内置多重安全防护（HSTS、X-Frame-Options、CSP 等）
-- **🎨 精美错误页**：为常见 HTTP 错误码提供美观的自定义页面
+- **🎨 精美错误页**：通过 Git Submodule 引入 `error-pages/noise` 主题
 - **🔄 反向代理模板**：开箱即用的反向代理配置示例
+- **🚫 默认访问拦截**：内置 `default_server`，统一兜底非法访问并返回错误页
+- **⚙️ 初始化脚本**：`init.sh` 一键初始化子模块并生成自签名证书
 - **⚡ 生产级优化**：性能与安全的完美平衡
 
 ## 📁 项目结构
@@ -22,16 +24,20 @@
 │   └── pull_request_template.md    # PR 模板
 ├── conf.d/                         # 虚拟主机配置目录
 │   ├── cert/                       # SSL 证书存放目录
-│   │   └── example/                # 示例域名证书文件夹
+│   │   ├── example/                # 示例域名证书文件夹
+│   │   └── default/                # 默认拦截服务器证书目录（本地生成）
+│   │       └── .gitkeep            # 保持目录结构（证书文件本地生成）
 │   ├── error-pages/                # 错误页面（Git Submodule）
 │   │   └── noise/                  # tarampampam/error-pages noise 主题
 │   │       ├── 400.html ～ 505.html  # 20+ 种精美错误页面
+│   ├── default.conf                # 默认服务器配置（拦截 IP/未知域名访问）
 │   └── example.conf                # 示例服务器配置（含反向代理）
 ├── log/                            # 日志文件目录
 │   └── .gitkeep                    # 保持目录结构
 ├── .gitignore                      # Git 忽略规则
 ├── .gitmodules                     # Git 子模块配置
 ├── nginx.conf                      # 主配置文件（含详细中文注释）
+├── init.sh                         # 初始化脚本（子模块 + 自签名证书）
 ├── LICENSE                         # 开源协议
 ├── README.md                       # 项目说明文档（本文件）
 ├── CODEOWNERS                      # 代码所有者配置
@@ -115,6 +121,13 @@
 - **⏱️ 限流防护**：多层限流策略，防止 DDoS 和资源滥用
 - **📝 灵活的日志**：访问日志缓冲和定期刷新，便于审计和分析
 
+### 默认拦截范围（`conf.d/default.conf`）
+- **IP 直接访问**：如 `http://SERVER_IP/`、`https://SERVER_IP/`，统一返回 `403`
+- **未知/错误域名访问**：`Host` 不匹配任何业务 `server_name` 时由 `default_server` 接管并返回 `403`
+- **域名 + 非标准端口访问**：如 `example.com:8080`、`example.com:9443`，未命中业务监听端口时进入默认拦截逻辑
+- **HTTPS 非法访问**：使用本地自签名证书完成握手后返回 `403` 错误页
+- **日志审计**：拦截流量写入 `default_access.log` 与 `default_ssl_access.log` 便于排查与封禁策略
+
 ## ⚙️ 核心配置要点
 
 ### 工作进程配置
@@ -154,7 +167,7 @@ ssl_session_cache shared:SSL:10m;       # SSL 会话缓存
 
 ### 修改错误页面
 
-自定义错误页面位于 `conf.d/error/` 目录，直接编辑 HTML 文件即可。
+当前错误页面来自子模块 `conf.d/error-pages/noise/`，可按需替换主题或固定到指定提交版本。
 
 ## 🤝 参与贡献
 
