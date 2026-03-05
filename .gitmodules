@@ -1,0 +1,4 @@
+[submodule "conf.d/error-pages"]
+	path = conf.d/error-pages
+	url = https://github.com/tarampampam/error-pages.git
+	branch = gh-pages
