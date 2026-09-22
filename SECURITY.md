@@ -1,19 +1,26 @@
-# Security Policy
+# 安全策略
 
-## Reporting Security Issues
-**Do NOT open a public issue for security vulnerabilities.**
+## 支持的版本
 
-Please email security concerns privately to VaillerTeeter or open a GitHub Security Advisory.
+| 版本 | 支持状态 |
+| --- | --- |
+| latest (master) | ✅ |
 
-## Supported Versions
-Security updates are provided for the latest version and one prior major version.
+## 报告漏洞
 
-## Security Features
-- Private vulnerability reporting
-- Secret scanning enabled
-- Dependabot security updates enabled
-- All PRs require review before merge
-- Branch protection enforced on main branches
+**请勿通过公开的 GitHub Issue 报告安全漏洞。**
 
-## Commitment
-We take security seriously and will respond to legitimate security concerns promptly.
+如果你发现了安全漏洞，请通过以下方式私下联系我：
+
+- **邮件**：[wyc_19533480830@outlook.com](mailto:wyc_19533480830@outlook.com)
+- **邮件主题**：`[SECURITY] 漏洞报告 - <简短描述>`
+
+请在报告中包含以下信息：
+
+1. 漏洞的类型（如 XSS、SQL 注入、路径遍历等）
+2. 受影响的文件路径或组件
+3. 重现漏洞的步骤
+4. 漏洞的潜在影响
+5. 如有可能，提供修复建议
+
+我会在 **48 小时内**确认收到你的报告，并在 **7 个工作日内**提供初步评估。

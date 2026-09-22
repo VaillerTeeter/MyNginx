@@ -1,0 +1,372 @@
+---
+# CI — Lint 工作流
+#
+# 设计原则：`.lintrc` 里每保留一个配置，就在此对应一个 job；与本仓库内容无关的检查一律不引入。
+# 覆盖对象：nginx 配置、Markdown 文档、YAML、GitHub Actions 工作流、提交信息、
+#           密钥与 SAST、文件命名、空白与行尾规范、外链可用性、Issue 模板 schema。
+# 约定：`.lintrc/**` 既是各 job 引用的配置来源，也与其他文件一样接受通用规范检查
+#       （命名、空白与行尾、拼写、YAML 规范、密钥与 SAST）。
+
+name: Lint
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================
+  # 文档 / 拼写 / 命名
+  # ============================================================
+  markdown-lint:
+    name: Markdown Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install markdownlint config
+        run: cp .lintrc/docs/markdown/.markdownlint.json .markdownlint.json
+
+      - name: Lint Markdown
+        uses: DavidAnson/markdownlint-cli2-action@v24
+        with:
+          globs: "**/*.md"
+
+  yaml-lint:
+    name: YAML Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install yamllint
+        run: pip install yamllint==1.35.1
+
+      - name: Collect YAML files
+        id: collect
+        run: |
+          mapfile -t FILES < <(find . \( -name "*.yml" -o -name "*.yaml" \) \
+            ! -path "./.git/*" \
+            ! -path "./conf.d/error/*" \
+            ! -path "./logs/*" | sort)
+          printf '%s\n' "${FILES[@]}" > /tmp/yaml-files.txt
+          echo "count=${#FILES[@]}" >> "$GITHUB_OUTPUT"
+
+      - name: Run yamllint
+        if: steps.collect.outputs.count != '0'
+        run: |
+          xargs yamllint \
+            --config-file .lintrc/general/.yamllint.yml \
+            --format github \
+            < /tmp/yaml-files.txt
+
+      - name: Run yamllint (strict)
+        if: steps.collect.outputs.count != '0'
+        run: |
+          xargs yamllint \
+            --config-file .lintrc/general/.yamllint.yml \
+            --strict \
+            < /tmp/yaml-files.txt
+
+  cspell-lint:
+    name: CSpell (Spelling)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+
+      - name: Install cspell
+        run: npm install -g cspell@8.17.1
+
+      - name: Run cspell
+        run: |
+          cspell lint \
+            --config .lintrc/general/cspell.json \
+            --no-progress \
+            "**"
+
+  ls-lint:
+    name: ls-lint (File Naming)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install ls-lint
+        run: |
+          LS_LINT_VER="2.3.1"
+          curl -sL \
+            "https://github.com/loeffel-io/ls-lint/releases/download/v${LS_LINT_VER}/ls-lint-linux-amd64" \
+            -o /tmp/ls-lint
+          sudo install -m 0755 /tmp/ls-lint /usr/local/bin/ls-lint
+
+      - name: Run ls-lint
+        run: ls-lint --config .lintrc/general/.ls-lint.yml
+
+  # ============================================================
+  # 通用文本规范 / 工作流 / schema
+  # ============================================================
+  editorconfig-lint:
+    name: EditorConfig Checker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install editorconfig-checker
+        run: |
+          EC_VER="3.0.3"
+          curl -fsSL \
+            "https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v${EC_VER}/ec-linux-amd64.tar.gz" \
+            | tar xz -C /tmp
+          sudo install -m 0755 /tmp/ec-linux-amd64 /usr/local/bin/ec
+
+      - name: Run editorconfig-checker
+        run: |
+          ec \
+            -ignore-defaults \
+            -exclude '(^|/)\.git/' \
+            -exclude '(^|/)conf\.d/error/' \
+            -exclude '(^|/)logs/'
+
+  github-actions-lint:
+    name: GitHub Actions Lint (actionlint)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install actionlint
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          sudo install -m 0755 ./actionlint /usr/local/bin/actionlint
+
+      - name: Run actionlint
+        run: actionlint -color
+
+  issue-config-lint:
+    name: Issue Chooser Config (JSON Schema)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install check-jsonschema
+        run: pip install check-jsonschema==0.38.0
+
+      - name: Validate issue template chooser config
+        run: |
+          check-jsonschema \
+            --schemafile .lintrc/data-formats/yaml/issue-config.schema.json \
+            .github/ISSUE_TEMPLATE/config.yml
+
+  broken-link-lint:
+    name: Broken Links (lychee)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Run lychee
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --no-progress --verbose
+            --accept 200,206,429
+            --max-retries 3
+            --timeout 20
+            --exclude-path conf.d/error
+            --exclude-path logs
+            --exclude-path .git
+            "**/*.md"
+          fail: true
+
+  # ============================================================
+  # 提交信息 / 安全
+  # ============================================================
+  commitlint-lint:
+    name: Commitlint (Commit Message)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+
+      - name: Install commitlint
+        run: |
+          npm install --no-save \
+            @commitlint/cli@19.6.0 \
+            @commitlint/config-conventional@19.6.0 \
+            conventional-changelog-conventionalcommits@8.0.0
+
+      - name: Lint commit messages
+        run: |
+          from="${{ github.event.pull_request.base.sha }}"
+          to="${{ github.event.pull_request.head.sha }}"
+          failed=0
+          while read -r sha; do
+            [ -z "${sha}" ] && continue
+            subject=$(git log -1 --format=%s "${sha}")
+            echo "--- ${sha} : ${subject} ---"
+            # 去掉 Windows 工具可能写入的 UTF-8 BOM，避免 header 规则误判
+            msg=$(git log -1 --format=%B "${sha}" | sed '1s/^\xEF\xBB\xBF//')
+            if ! printf '%s\n' "${msg}" \
+                | npx commitlint \
+                    --config .lintrc/git/.commitlintrc.cjs \
+                    --verbose; then
+              echo "commitlint FAILED for ${sha} : ${subject}"
+              failed=1
+            fi
+          done < <(git log --format="%H" "${from}..${to}")
+          exit ${failed}
+
+  secret-scan:
+    name: Secret Scan (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .lintrc/security/.gitleaks.toml
+
+  sast-scan:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Run Semgrep
+        run: |
+          semgrep scan \
+            --config .lintrc/security/.semgrep.yml \
+            --config p/github-actions \
+            --error \
+            --exclude .git/ \
+            --exclude conf.d/error/ \
+            --exclude logs/ \
+            .
+
+  # ============================================================
+  # nginx 配置
+  # ============================================================
+  nginx-lint:
+    name: Nginx Config (nginx -t + gixy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # nginx.conf 里用的是绝对路径（/etc/nginx/...），且证书是 0 字节占位文件，
+      # 因此先把配置复制到临时目录、生成一次性自签证书，再用官方镜像做语法校验。
+      - name: Prepare nginx test tree
+        run: |
+          rm -rf /tmp/nginx-test
+          mkdir -p /tmp/nginx-test
+          cp nginx.conf /tmp/nginx-test/nginx.conf
+          cp -r conf.d /tmp/nginx-test/conf.d
+          rm -rf /tmp/nginx-test/conf.d/error
+          openssl req -x509 -newkey rsa:2048 -days 1 -nodes \
+            -subj "/CN=example.example.example" \
+            -keyout /tmp/nginx-test/conf.d/cert/example/example.example.example.key \
+            -out /tmp/nginx-test/conf.d/cert/example/example.example.example_bundle.crt
+
+      - name: Check syntax (nginx -t)
+        run: |
+          docker run --rm \
+            -v /tmp/nginx-test/nginx.conf:/etc/nginx/nginx.conf:ro \
+            -v /tmp/nginx-test/conf.d:/etc/nginx/conf.d:ro \
+            nginx:alpine nginx -t
+
+      - name: Security analysis (gixy)
+        run: |
+          docker run --rm \
+            -v "$PWD:/repo" -w /repo \
+            yandex/gixy \
+            -c .lintrc/infrastructure/nginx/gixy.conf \
+            nginx.conf conf.d/example.conf
+
+  # ============================================================
+  # 汇总门（供分支保护作为唯一必需状态检查）
+  # ============================================================
+  all-checks:
+    name: All Lint Checks Passed
+    if: always()
+    runs-on: ubuntu-latest
+    needs:
+      - markdown-lint
+      - yaml-lint
+      - cspell-lint
+      - ls-lint
+      - editorconfig-lint
+      - github-actions-lint
+      - issue-config-lint
+      - broken-link-lint
+      - commitlint-lint
+      - secret-scan
+      - sast-scan
+      - nginx-lint
+    steps:
+      - name: Verify all required jobs succeeded
+        run: |
+          results="${{ join(needs.*.result, ' ') }}"
+          echo "results: ${results}"
+          for result in ${results}; do
+            case "${result}" in
+              success|skipped) ;;
+              *)
+                echo "::error::Required lint job did not succeed: ${result}"
+                exit 1
+                ;;
+            esac
+          done
