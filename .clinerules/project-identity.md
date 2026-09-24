@@ -119,7 +119,7 @@ context.
 │   │   ├── orient/
 │   │   ├── shuffle/
 │   │   └── win98/                        # each of the 11 themes holds 20 status code pages (400-505)
-│   └── example.conf                      # virtual host example
+│   └── default.conf                      # virtual host example
 ├── logs/                                 # runtime log directory; only .gitkeep is tracked
 │   └── .gitkeep                          # placeholder that keeps the directory in git
 ├── CODE_OF_CONDUCT.md                    # code of conduct
